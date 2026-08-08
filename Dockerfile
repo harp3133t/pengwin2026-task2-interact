@@ -45,6 +45,10 @@ RUN pip install --upgrade pip && \
 COPY inference /opt/app/inference
 COPY code_task1 /opt/app/code_task1
 
+# Build contexts can preserve restrictive host modes. Grand Challenge runs as
+# a non-root service user, so make all vendored Python sources readable.
+RUN chmod -R a+rX /opt/app/inference /opt/app/code_task1
+
 # --- nnUNet trainer-discovery shim -----------------------------------------
 # nnUNet v2 는 `nnunetv2/training/nnUNetTrainer/` 아래만 walk 하여 trainer class 를 찾는다.
 # 우리의 PengwinTrainer*ABBC/Affinity 는 /opt/app/code_task1/core.py 에 있어 그 walk 밖이므로,
@@ -68,10 +72,11 @@ ENV PENGWIN_ROOT=/opt/ml/model \
     MPLCONFIGDIR=/tmp/matplotlib \
     XDG_CACHE_HOME=/tmp/.cache
 
-# --- Model selection (Task 1 배포 v2.2 = rank 10 과 동일) --------------------
-# Stage-2 fracture net = STU-Net Affinity V308(fold_0), affinity agglomeration decode(T=0.45).
-# Stage-1 anatomy = V301(fold_0). fusion/bone-reconcile OFF(코드엔 있으나 env 로 비활성).
-# Task 2 는 이 동일 모델 tarball(model_v2_2.tar.gz)을 재사용하고, family 라우팅만 클릭으로 대체한다.
+# --- Model selection (Task 1 v3.5 always-on anatomy experts) ----------------
+# Stage A remains V301(fold_0). Click names authoritatively force the routed
+# anatomy set; Stage B then always selects the corresponding Sacrum, shared-Hip,
+# or Femur expert and decodes its 13 channels at T=0.75. Click seed splitting
+# remains disabled because Task 2 v3.3 validation refuted it.
 #
 # !! PENGWIN_DS538_FOLD 는 반드시 0 이어야 한다. "all" 이 아니다 !!
 # 이 블록은 Task 1 의 stale v1.9 Dockerfile 에서 복사되어 DS538_FOLD=all 을 물려받았다. 그 값이 유효했던
@@ -91,15 +96,21 @@ ENV PENGWIN_ROOT=/opt/ml/model \
 # watershed 강제 마커로 코어를 쪼개는 실험이었으나 val 에서 REFUTED 되었다(rank 9 vs v3.1 rank 2:
 # 쉬운 val 케이스에 spurious over-split 을 더함). 따라서 클릭은 seed 주입 없이 family 라우팅에만
 # 쓰인다(=v3.1 동작). 0 으로 유지할 것.
-ENV PENGWIN_DS538_TRAINER=PengwinTrainerSTUNetBaseAffinityV308 \
+ENV PENGWIN_DS539_TRAINER=PengwinTrainerSTUNetBaseAnatomyV301 \
+    PENGWIN_DS539_FOLD=0 \
+    PENGWIN_DS538_TRAINER=PengwinTrainerSTUNetBaseAffinityV308DeployedVal \
+    PENGWIN_DS538_TRAINER_SACRUM=PengwinTrainerSTUNetBaseAffinityV308SacrumExpertDeployedVal \
+    PENGWIN_DS538_TRAINER_HIP=PengwinTrainerSTUNetBaseAffinityV308HipExpertDeployedVal \
+    PENGWIN_DS538_TRAINER_FEMUR=PengwinTrainerSTUNetBaseAffinityV308FemurExpertDeployedVal \
     PENGWIN_DS538_FOLD=0 \
     PENGWIN_DS538_OUT_CH=13 \
     PENGWIN_AFFINITY_DECODE=1 \
-    PENGWIN_AGGLO_T=0.45 \
+    PENGWIN_AGGLO_T=0.75 \
     PENGWIN_FUSION_DECODE=0 \
     PENGWIN_CLICK_INJECT=0 \
     PENGWIN_STAGEA_BONE_RECONCILE=0 \
     PENGWIN_TARGET_ROUTER=1 \
+    PENGWIN_RF_CONF_MARGIN=0.15 \
     PENGWIN_TARGET_ROUTER_PATH=/opt/ml/model/stage1_router/stage1_target_router_fold0.joblib
 
 # Grand Challenge security policy: container must not run as root.

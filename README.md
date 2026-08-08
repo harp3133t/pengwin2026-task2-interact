@@ -9,6 +9,30 @@
 >
 > 본 저장소는 **검증된 Task 1 캐스케이드(GC rank 10 기준 = v2.2, 현행 v2.4)를 그대로 재사용**하고, 클릭을 **해부부위 라우팅 결정에 주입**하는 방식으로 Task 2를 푼다. 세그멘테이션 로직을 새로 만들지 않는 것이 설계의 핵심이다.
 
+## 🧪 v3.5 후보 — Task 1 always-on anatomy experts 적용 (`T=0.75`)
+
+Task 1 v3.5의 Stage-B 정책을 Task 2에도 이식했다. 클릭 이름으로
+`Sacrum/LeftHip/RightHip/Femur`를 강제 라우팅한 뒤, 각 anatomy에 대해
+Sacrum expert, 좌·우 공용 Hip expert, Femur expert를 항상 선택한다. Stage A는
+V301 fold 0을 유지하며 클릭 seed 분할은 검증에서 기각된 상태 그대로 끈다
+(`PENGWIN_CLICK_INJECT=0`). 업로드 모델은 Task 1 v3.5의
+`model_v3_5_always_expert_t075_20260805.tar.gz`와 바이트 동일한 번들을 Task 2
+Models 탭에 별도로 등록한다.
+
+68-case fold-0 / 4 click-strategy 감사에서 **272/272 anatomy route가 Task 1 v3.5
+평가 경로와 일치**했다. 따라서 클릭이 decode를 바꾸지 않는 이 후보의
+configuration-equivalent 추정치로 Task 1 v3.5 official-aligned proxy-v2를
+다음과 같이 이전해 참고한다(전체 Task 2 cohort 신규 추론값은 아님):
+
+| IoU-F | Dice | HD95 mm ↓ | ASSD mm ↓ | Instance F1 | Merge ↓ | Split ↓ |
+|---:|---:|---:|---:|---:|---:|---:|
+| 0.816842 | 0.855649 | 6.687 | 1.852 | 0.916377 | 21 | 330 |
+
+이는 공식 hidden-test/leaderboard 점수가 아니라 경로 동등성이 확인된 로컬
+proxy 결과다. overlap/surface는 개선되지만 기존 unified 대비 instance F1이
+0.002772 낮고 split이 12건 많으므로, 현재 v3.1 Active를 자동 교체하지 않고
+별도 업로드 후보로 유지한다.
+
 ---
 
 ## 🚀 현재 배포 상태 (2026-07-25, **v3.1** — 2nd place, OOM-fix)

@@ -2161,3 +2161,32 @@ class PengwinTrainerSTUNetBaseAffinityV308(PengwinTrainerSTUNetBaseABBCPhase1V30
         return logits[:, :4]
 
 
+# Task 1 v3.5 checkpoint names are also nnU-Net trainer-discovery keys. The
+# expert checkpoints keep the exact V308 network architecture (1-channel CT,
+# 4 ABBC + 9 affinity outputs); their training-only split filtering and frozen
+# encoder policy do not participate in inference. These deployment aliases
+# therefore expose the validated class names while inheriting the byte-
+# compatible architecture builder from V308.
+class PengwinTrainerSTUNetBaseAffinityV308DeployedVal(
+    PengwinTrainerSTUNetBaseAffinityV308
+):
+    """Inference-compatible name for the deployed-decoder V308 checkpoint."""
+
+
+class PengwinTrainerSTUNetBaseAffinityV308SacrumExpertDeployedVal(
+    PengwinTrainerSTUNetBaseAffinityV308DeployedVal
+):
+    """Sacrum expert used by the Task 1/Task 2 v3.5 candidate."""
+
+
+class PengwinTrainerSTUNetBaseAffinityV308HipExpertDeployedVal(
+    PengwinTrainerSTUNetBaseAffinityV308DeployedVal
+):
+    """Shared LeftHip/RightHip expert used by the v3.5 candidate."""
+
+
+class PengwinTrainerSTUNetBaseAffinityV308FemurExpertDeployedVal(
+    PengwinTrainerSTUNetBaseAffinityV308DeployedVal
+):
+    """Femur expert used by the Task 1/Task 2 v3.5 candidate."""
+
