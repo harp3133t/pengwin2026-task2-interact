@@ -20,10 +20,9 @@ This candidate ports the Task 1 v3.5 Stage-B policy to Task 2. It first forces
 the anatomy route to `Sacrum/LeftHip/RightHip/Femur` from the click names, then
 always selects the Sacrum expert, shared left/right Hip expert, or Femur expert
 for the routed anatomy. Stage A remains V301 fold 0, and click-seed splitting
-remains disabled as rejected by validation (`PENGWIN_CLICK_INJECT=0`). Upload a
-byte-identical copy of the Task 1 v3.5
-`model_v3_5_always_expert_t075_20260805.tar.gz` bundle separately under the Task
-2 Models tab.
+remains disabled as rejected by validation (`PENGWIN_CLICK_INJECT=0`). Package
+the byte-identical Task 1 v3.5 weights as **`model.tar.gz`** and upload the bundle
+separately under the Task 2 Models tab.
 
 In a 68-case fold-0 audit across four click strategies, **all 272/272 anatomy
 routes matched the Task 1 v3.5 evaluation path**. Because clicks do not alter
@@ -50,7 +49,7 @@ replace the current v3.1 Active deployment.
 | **Deployed version** | **v3.1** — ranked/deployed Active, **2nd place**. This is the OOM-fix build; its weights are byte-identical to v3.0. Select `v3.1` for the GC build. `PENGWIN_CLICK_INJECT=0` (clicks are used only for routing). v3.2 (official pelvic/femur rule router) and v3.3 (click seed injection) exist only as tags and are not deployment configurations. In particular, **v3.3 click seed injection was REFUTED** (validation rank 9 versus v3.1 rank 2 because it introduced spurious over-splits in easy validation cases), so do not deploy it. |
 | **Pipeline** | Click parsing → **family route selection** → Stage A `V301` (anatomy, fold 0) → Stage B `V308` (fracture affinity, **fold 0**) → average-linkage agglomeration decoding (`AGGLO_T=0.45`) |
 | **Segmentation logic** | `inference/task1_pipeline.py` is a **byte-identical copy** of the Task 1 deployed `inference.py` (tag v2.4; verified by MD5). There is no duplicated logic. |
-| **Model bundle** | **`model_v3_0.tar.gz`** — must be uploaded separately under the Task 2 algorithm's Models tab because the Task 1 model is not shared automatically. The weights are MD5-identical to v2.2 (rank 10); only the router pickle was replaced with a native scikit-learn 1.6.1 artifact (302 warnings → 0). |
+| **Model bundle** | **`model.tar.gz`** — must be uploaded separately under the Task 2 algorithm's Models tab because the Task 1 model is not shared automatically. It must contain the final Stage-A checkpoint, the anatomy-specific Stage-B expert checkpoints selected by the Dockerfile, and the router artifact in the layout shown in §7.2. |
 | **Role of clicks** | Clicks **determine the anatomy family route**. An exhaustive audit of all 1,360 real click files found 680 pelvic and 680 femur cases, with zero unclassified cases. Across four click strategies (uniform/EDT/center-of-mass/boundary) × 340 cases, pelvic cases always contained three bones and no bone was omitted. |
 | **Local build/validation** | ✅ Successfully built `pengwin-task2-interact:latest` (19.7 GB) and verified that the shim re-exports four classes. A GC-equivalent smoke test covered click parsing, routing, model loading (`w0sum` identical to GC), all four output-slug hedges, and the never-crash contract. **GPU forward inference could not be validated on this host (sm_120)** because the container's PyTorch 2.1.2+cu118 lacks that kernel; it works on the GC T4 (sm_75). |
 | **GC evaluation history** | v3.1 = **2nd place** (deployed Active). v3.3 click seed injection was **REFUTED** at validation rank 9. The smoke test in §7 is mandatory before submission. |
@@ -398,6 +397,7 @@ OUTPUT_SLUG_CANDIDATES = (
 
 ```
 .
+├── build.sh                         Convenience entry point for building the container image
 ├── Dockerfile                       GC container definition, including model-selection ENV
 ├── requirements.txt                 Pins torch 2.1.2+cu118, nnunetv2 2.5.1, scikit-learn 1.6.1
 ├── inference/
@@ -423,21 +423,90 @@ OUTPUT_SLUG_CANDIDATES = (
 
 ### 7.2 Model Bundle
 
-Upload **`model_v3_0.tar.gz` separately under this Task 2 algorithm's Models
-tab** because the Task 1 model is not shared automatically. No separate training
-is required. SHA-256 begins with `560dff90…`. The weights are MD5-identical to
-v2.2 (rank 10); only the router pickle was replaced by a native scikit-learn
-1.6.1 artifact (the 1.7.2 `model_v2_2.tar.gz` produced 302 load warnings, versus
-zero for the 1.6.1 artifact). **Do not upload `model_v2_3.tar.gz` (rank 44).**
+Provide the final weights as **`model.tar.gz`** and upload the archive separately
+under this Task 2 algorithm's Models tab because Task 1 models are not shared
+automatically. For local execution, extract the archive into a model-root
+directory:
+
+```bash
+mkdir -p /absolute/path/to/model-root
+tar -xzf /absolute/path/to/model.tar.gz -C /absolute/path/to/model-root
+```
+
+After extraction, the directory must contain the Stage-A checkpoint, every
+Stage-B expert checkpoint selected by the Dockerfile, and the router artifact:
 
 ```
-/opt/ml/model/
+/absolute/path/to/model-root/
 ├── nnunet/results/Dataset539_.../PengwinTrainerSTUNetBaseAnatomyV301__.../fold_0/checkpoint_best.pth
-├── nnunet/results/Dataset538_.../PengwinTrainerSTUNetBaseAffinityV308__.../fold_0/checkpoint_best.pth
+├── nnunet/results/Dataset538_.../PengwinTrainerSTUNetBaseAffinityV308*__.../fold_0/checkpoint_best.pth
 └── stage1_router/stage1_target_router_fold0.joblib
 ```
 
-### 7.3 Local Execution
+### 7.3 Build the Container Image
+
+Prerequisites are Docker and enough disk space for the CUDA/PyTorch image and
+Python dependencies. From the repository root, run:
+
+```bash
+./build.sh
+```
+
+This builds `pengwin-task2-interact:latest`. To use a different image tag:
+
+```bash
+IMAGE_TAG=pengwin-task2-interact:submission ./build.sh
+```
+
+`build.sh` delegates to `scripts/build_image.sh`, which always uses the
+repository root as the Docker build context. Model weights are intentionally
+excluded from the image.
+
+### 7.4 Run the Container with the Grand Challenge Interface
+
+Before running the container, extract the final model bundle into a model-root
+directory with the layout shown in §7.2. Prepare an input directory containing
+one CT volume and its click JSON. Both the simple local layout below and the GC
+`/input/images/<interface-slug>/...` layout are supported.
+
+```
+/absolute/path/to/input/
+├── pelvic-fracture-ct.mha
+└── peripelvic-fragment-clicks.json
+```
+
+Create an empty, writable output directory and run the image without network
+access, matching the Grand Challenge runtime contract:
+
+```bash
+mkdir -p /absolute/path/to/output
+
+docker run --rm \
+  --gpus all \
+  --network none \
+  --mount type=bind,src=/absolute/path/to/input,dst=/input,readonly \
+  --mount type=bind,src=/absolute/path/to/output,dst=/output \
+  --mount type=bind,src=/absolute/path/to/model-root,dst=/opt/ml/model,readonly \
+  pengwin-task2-interact:latest
+```
+
+The container has no command-line arguments. Its entry point automatically
+discovers the CT and click files, runs inference, and writes an instance-label
+`.mha` file under:
+
+```
+/absolute/path/to/output/images/<output-interface-slug>/<input-filename>.mha
+```
+
+The output is `uint8`, uses PENGWIN label IDs 0–200, and preserves the input
+image geometry. When `/input/inputs.json` is available, the output interface
+slug is read from that file; otherwise the implementation writes to its
+documented compatibility candidates.
+
+### 7.5 Run Directly with Python
+
+For development outside the container, install the pinned dependencies and
+point the environment variables to one case and the extracted model root:
 
 ```bash
 PENGWIN_INPUT_CT=/path/to/image.mha \
@@ -447,7 +516,7 @@ PENGWIN_ROOT=/path/to/model_root \
 python inference/inference.py
 ```
 
-### 7.4 ⚠️ Mandatory Pre-Submission Smoke Test
+### 7.6 ⚠️ Mandatory Pre-Submission Smoke Test
 
 Do **not** treat “job succeeded” as proof of success. The defect in §6.1
 satisfied both exit code 0 and output-file existence while the entire pipeline
